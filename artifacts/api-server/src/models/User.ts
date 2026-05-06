@@ -10,7 +10,8 @@ export interface IUser extends Document {
   location?: string;
   bio?: string;
   avatar?: string;
-  role: string;
+  role: "citizen" | "ward_admin";
+  ward?: string;
   issueCount: number;
   createdAt: Date;
   comparePassword(candidate: string): Promise<boolean>;
@@ -25,7 +26,8 @@ const UserSchema = new Schema<IUser>(
     location: { type: String, default: null },
     bio: { type: String, default: null },
     avatar: { type: String, default: null },
-    role: { type: String, default: "citizen" },
+    role: { type: String, default: "citizen", enum: ["citizen", "ward_admin"] },
+    ward: { type: String, default: null },
     issueCount: { type: Number, default: 0 },
   },
   { timestamps: true }

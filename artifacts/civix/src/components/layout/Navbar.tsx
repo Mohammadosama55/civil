@@ -10,7 +10,8 @@ import {
   AlertTriangle, 
   Moon, 
   Sun, 
-  User 
+  User,
+  Shield
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
@@ -82,6 +83,12 @@ export function Navbar() {
           >
             {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
           </Button>
+
+          {user?.role === "ward_admin" && (
+            <Button variant="outline" size="sm" asChild className="hidden sm:flex gap-1.5 border-primary text-primary hover:bg-primary hover:text-white">
+              <Link href="/admin"><Shield className="h-4 w-4" />Admin</Link>
+            </Button>
+          )}
 
           {user ? (
             <Link href="/profile" data-testid="link-profile">
