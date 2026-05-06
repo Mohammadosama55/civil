@@ -1,4 +1,3 @@
-import { AppProps } from "next/app";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -11,12 +10,12 @@ import About from "@/pages/about";
 import Contact from "@/pages/contact";
 import Contributors from "@/pages/contributors";
 import Feedback from "@/pages/feedback";
-// import VotingSystem from "@/pages/voting-system";
-// import IssueMap from "@/pages/issue-map";
-// import Login from "@/pages/login";
-// import Register from "@/pages/register";
-// import Profile from "@/pages/profile";
-// import SOS from "@/pages/sos";
+import VotingSystem from "@/pages/voting-system";
+import IssueMap from "@/pages/issue-map";
+import Login from "@/pages/login";
+import Register from "@/pages/register";
+import Profile from "@/pages/profile";
+import SOS from "@/pages/sos";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -29,14 +28,12 @@ function Router() {
       <Route path="/contact" component={Contact} />
       <Route path="/contributors" component={Contributors} />
       <Route path="/feedback" component={Feedback} />
-      {/* 
       <Route path="/voting-system" component={VotingSystem} />
       <Route path="/issue-map" component={IssueMap} />
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
       <Route path="/profile" component={Profile} />
       <Route path="/sos" component={SOS} />
-      */}
       <Route component={NotFound} />
     </Switch>
   );

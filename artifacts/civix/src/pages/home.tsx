@@ -1,6 +1,6 @@
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Play, Star } from "lucide-react";
+import { Play, Star, MapPin } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 
 export default function Home() {
