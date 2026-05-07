@@ -2,8 +2,9 @@ import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { AuthProvider } from "@/contexts/AuthContext";
-import { ThemeProvider } from "@/contexts/ThemeContext";
+import { AuthProvider } from "@/context/AuthContext";
+import { ThemeProvider } from "@/context/ThemeContext";
+import ProtectedRoute from "@/components/ProtectedRoute";
 
 import Home from "@/pages/home";
 import About from "@/pages/about";
@@ -17,6 +18,8 @@ import Register from "@/pages/register";
 import Profile from "@/pages/profile";
 import SOS from "@/pages/sos";
 import AdminDashboard from "@/pages/admin-dashboard";
+import HeatmapPage from "@/pages/HeatmapPage";
+import ComplaintDetail from "@/pages/ComplaintDetail";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -31,11 +34,17 @@ function Router() {
       <Route path="/feedback" component={Feedback} />
       <Route path="/voting-system" component={VotingSystem} />
       <Route path="/issue-map" component={IssueMap} />
+      <Route path="/heatmap" component={HeatmapPage} />
+      <Route path="/complaints/:id" component={ComplaintDetail} />
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
-      <Route path="/profile" component={Profile} />
+      <Route path="/profile">
+        <ProtectedRoute><Profile /></ProtectedRoute>
+      </Route>
       <Route path="/sos" component={SOS} />
-      <Route path="/admin" component={AdminDashboard} />
+      <Route path="/admin">
+        <ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );

@@ -15,8 +15,8 @@ import {
   Bell
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/contexts/AuthContext";
-import { useTheme } from "@/contexts/ThemeContext";
+import { useAuth } from "@/context/AuthContext";
+import { useTheme } from "@/context/ThemeContext";
 import { cn } from "@/lib/utils";
 import { useAlerts } from "@/hooks/use-alerts";
 
