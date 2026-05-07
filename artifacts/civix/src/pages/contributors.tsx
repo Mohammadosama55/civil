@@ -134,12 +134,12 @@ export default function Contributors() {
 
                   <Avatar className={`${viewMode === 'grid' ? 'w-20 h-20 mb-4' : 'w-16 h-16'} border-2 border-white dark:border-slate-800 shadow-sm`}>
                     <AvatarImage src={contributor.avatar || undefined} />
-                    <AvatarFallback className="bg-primary/10 text-primary text-xl font-bold">{contributor.username.charAt(0).toUpperCase()}</AvatarFallback>
+                    <AvatarFallback className="bg-primary/10 text-primary text-xl font-bold">{(contributor.username ?? contributor.name ?? "?").charAt(0).toUpperCase()}</AvatarFallback>
                   </Avatar>
 
                   <div className={`${viewMode === 'grid' ? '' : 'flex-1'} flex flex-col`}>
                     <h3 className="font-bold text-lg text-slate-900 dark:text-white line-clamp-1">{contributor.name || contributor.username}</h3>
-                    <p className="text-slate-500 dark:text-slate-400 text-sm mb-3">@{contributor.username}</p>
+                    {contributor.username && <p className="text-slate-500 dark:text-slate-400 text-sm mb-3">@{contributor.username}</p>}
                     
                     <div className={`flex items-center gap-2 ${viewMode === 'grid' ? 'justify-center mb-4' : 'mb-0'}`}>
                       <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${getLabelColor(contributor.badge)}`}>

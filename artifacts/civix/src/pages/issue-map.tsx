@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { MapContainer, TileLayer, Marker, Popup, Circle, useMapEvents } from "react-leaflet";
 import { useGetIssues, useUpvoteIssue, useCreateIssue } from "@workspace/api-client-react";
@@ -7,8 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { MapPin, AlertCircle, Clock, CheckCircle2, Plus, ThumbsUp, X, Layers, Mail } from "lucide-react";
+import { MapPin, AlertCircle, Clock, CheckCircle2, Plus, ThumbsUp, X, Layers, Mail, Flame, TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import "leaflet/dist/leaflet.css";
@@ -21,6 +20,16 @@ L.Marker.prototype.options.icon = L.icon({ iconUrl: icon, shadowUrl: iconShadow,
 const WARDS = ["Ward 1", "Ward 2", "Ward 3", "Ward 4", "Ward 5"];
 const CATEGORIES = ["infrastructure", "sanitation", "safety", "environment", "other"];
 const STATUS_THRESHOLD = 2;
+
+interface HeatPoint {
+  lat: number;
+  lng: number;
+  status: string;
+  upvotes: number;
+  intensity: number;
+  ward?: string | null;
+  category?: string;
+}
 
 function LocationPicker({ onPick }: { onPick: (lat: number, lng: number) => void }) {
   useMapEvents({ click(e) { onPick(e.latlng.lat, e.latlng.lng); } });
@@ -45,6 +54,26 @@ function getStatusBadge(status: string) {
   }
 }
 
+function getHeatColor(point: HeatPoint): string {
+  if (point.status === "resolved") return "#10b981";
+  if (point.upvotes >= STATUS_THRESHOLD * 3) return "#7c3aed";
+  if (point.upvotes >= STATUS_THRESHOLD * 2) return "#dc2626";
+  if (point.upvotes >= STATUS_THRESHOLD) return "#ef4444";
+  return "#f59e0b";
+}
+
+function getHeatRadius(point: HeatPoint): number {
+  if (point.status === "resolved") return 250;
+  const base = 180;
+  const bonus = Math.min(point.upvotes * 60, 500);
+  return base + bonus;
+}
+
+function getHeatOpacity(point: HeatPoint): number {
+  if (point.status === "resolved") return 0.22;
+  return Math.min(0.55, 0.25 + point.upvotes * 0.06);
+}
+
 export default function IssueMap() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -58,6 +87,8 @@ export default function IssueMap() {
   const [form, setForm] = useState({ title: "", description: "", category: "infrastructure", ward: "Ward 1", location: "", imageUrl: "" });
   const [submitting, setSubmitting] = useState(false);
   const [votedIds, setVotedIds] = useState<Set<string>>(new Set());
+  const [heatData, setHeatData] = useState<HeatPoint[]>([]);
+  const [heatLoading, setHeatLoading] = useState(false);
 
   const params: Record<string, string> = {};
   if (category !== "all") params["category"] = category;
@@ -67,6 +98,16 @@ export default function IssueMap() {
   const { data: issues, isLoading, refetch } = useGetIssues(params);
   const upvoteMutation = useUpvoteIssue();
   const createMutation = useCreateIssue();
+
+  useEffect(() => {
+    if (!showHeatmap) return;
+    setHeatLoading(true);
+    fetch("/api/issues/heatmap", { credentials: "include" })
+      .then(r => r.json())
+      .then((pts: HeatPoint[]) => setHeatData(pts))
+      .catch(() => setHeatData([]))
+      .finally(() => setHeatLoading(false));
+  }, [showHeatmap]);
 
   const handleUpvote = async (id: string, currentVotes: number) => {
     if (votedIds.has(id)) { toast({ title: "Already voted", description: "You've already upvoted this issue." }); return; }
@@ -111,7 +152,8 @@ export default function IssueMap() {
     }
   };
 
-  const heatmapIssues = issues?.filter(i => i.lat && i.lng) ?? [];
+  const urgentCount = issues?.filter(i => i.upvotes >= STATUS_THRESHOLD && i.status !== "resolved").length ?? 0;
+  const resolvedCount = issues?.filter(i => i.status === "resolved").length ?? 0;
 
   return (
     <Layout>
@@ -127,6 +169,18 @@ export default function IssueMap() {
               <p className="text-[11px] text-slate-500">Click map to pin location when reporting</p>
             </div>
           </div>
+
+          {/* Quick stats */}
+          {!isLoading && (
+            <div className="hidden sm:flex items-center gap-3 mr-2">
+              <div className="flex items-center gap-1 text-[11px] font-medium text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400 px-2 py-1 rounded-lg">
+                <Flame className="w-3 h-3" />{urgentCount} urgent
+              </div>
+              <div className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 dark:text-emerald-400 px-2 py-1 rounded-lg">
+                <CheckCircle2 className="w-3 h-3" />{resolvedCount} resolved
+              </div>
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-2 flex-1 items-center">
             <Select value={category} onValueChange={setCategory}>
@@ -155,8 +209,13 @@ export default function IssueMap() {
           </div>
 
           <div className="flex gap-2 ml-auto">
-            <Button size="sm" variant={showHeatmap ? "default" : "outline"} className="h-8 text-xs gap-1.5" onClick={() => setShowHeatmap(p => !p)}>
-              <Layers className="w-3.5 h-3.5" /> Heatmap
+            <Button
+              size="sm"
+              variant={showHeatmap ? "default" : "outline"}
+              className={`h-8 text-xs gap-1.5 ${showHeatmap ? "bg-orange-500 hover:bg-orange-600 border-orange-500 text-white" : ""}`}
+              onClick={() => setShowHeatmap(p => !p)}
+            >
+              <Layers className="w-3.5 h-3.5" /> {showHeatmap ? "Heatmap On" : "Heatmap"}
             </Button>
             <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => setShowForm(p => !p)}>
               {showForm ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
@@ -168,7 +227,10 @@ export default function IssueMap() {
         {/* Report Form Panel */}
         {showForm && (
           <div className="bg-slate-50 dark:bg-slate-900 border-b border-border p-4 z-10 shrink-0">
-            <p className="text-xs text-slate-500 mb-3 flex items-center gap-1"><MapPin className="w-3 h-3" /> Click on the map below to pin the exact location, then fill in details.</p>
+            <p className="text-xs text-slate-500 mb-3 flex items-center gap-1">
+              <MapPin className="w-3 h-3 text-primary" />
+              <span>Click on the map below to pin the exact location, then fill in the details.</span>
+            </p>
             <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <Input placeholder="Issue title *" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} className="h-9 text-sm" required />
               <Input placeholder="Location address *" value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} className="h-9 text-sm" required />
@@ -188,9 +250,13 @@ export default function IssueMap() {
               <Input placeholder="Image URL (optional)" value={form.imageUrl} onChange={e => setForm(f => ({ ...f, imageUrl: e.target.value }))} className="h-9 text-sm" />
               <div className="flex items-center gap-2">
                 {pickedLat ? (
-                  <span className="text-xs text-primary font-medium flex items-center gap-1"><MapPin className="w-3 h-3" /> {pickedLat.toFixed(4)}, {pickedLng?.toFixed(4)}</span>
+                  <span className="text-xs text-primary font-semibold flex items-center gap-1">
+                    <MapPin className="w-3 h-3" /> {pickedLat.toFixed(4)}, {pickedLng?.toFixed(4)}
+                  </span>
                 ) : (
-                  <span className="text-xs text-slate-400 italic">No pin selected yet</span>
+                  <span className="text-xs text-amber-500 italic flex items-center gap-1">
+                    <MapPin className="w-3 h-3" /> Click map to pin
+                  </span>
                 )}
               </div>
               <Button type="submit" disabled={submitting} className="h-9 text-sm">
@@ -209,35 +275,50 @@ export default function IssueMap() {
             />
             {showForm && <LocationPicker onPick={(lat, lng) => { setPickedLat(lat); setPickedLng(lng); }} />}
 
-            {/* Heatmap circles */}
-            {showHeatmap && heatmapIssues.map(issue => (
-              <Circle
-                key={`heat-${issue.id}`}
-                center={[issue.lat!, issue.lng!]}
-                radius={300}
-                pathOptions={{
-                  fillColor: issue.status === "resolved" ? "#10b981" : issue.upvotes >= STATUS_THRESHOLD ? "#ef4444" : "#f59e0b",
-                  fillOpacity: 0.35,
-                  stroke: false,
-                }}
-              />
-            ))}
+            {/* Heatmap circles — layered for glow effect */}
+            {showHeatmap && !heatLoading && heatData.map((point, i) => {
+              const color = getHeatColor(point);
+              const radius = getHeatRadius(point);
+              const opacity = getHeatOpacity(point);
+              return (
+                <React.Fragment key={`heat-${i}`}>
+                  {/* outer glow */}
+                  <Circle
+                    center={[point.lat, point.lng]}
+                    radius={radius * 1.8}
+                    pathOptions={{ fillColor: color, fillOpacity: opacity * 0.3, stroke: false }}
+                  />
+                  {/* mid ring */}
+                  <Circle
+                    center={[point.lat, point.lng]}
+                    radius={radius * 1.1}
+                    pathOptions={{ fillColor: color, fillOpacity: opacity * 0.55, stroke: false }}
+                  />
+                  {/* core */}
+                  <Circle
+                    center={[point.lat, point.lng]}
+                    radius={radius * 0.45}
+                    pathOptions={{ fillColor: color, fillOpacity: Math.min(opacity * 1.1, 0.85), stroke: true, color, weight: 1, opacity: 0.4 }}
+                  />
+                </React.Fragment>
+              );
+            })}
 
             {/* Picked pin */}
             {pickedLat && pickedLng && (
               <Marker position={[pickedLat, pickedLng]}>
-                <Popup><div className="text-xs font-semibold text-primary">New Issue Pin</div></Popup>
+                <Popup><div className="text-xs font-semibold text-primary">📍 New Issue Pin</div></Popup>
               </Marker>
             )}
 
-            {/* Issue markers */}
-            {!showHeatmap && issues?.map(issue => {
+            {/* Issue markers — always shown */}
+            {issues?.map(issue => {
               if (!issue.lat || !issue.lng) return null;
               return (
                 <Marker key={issue.id} position={[issue.lat, issue.lng]}>
-                  <Popup maxWidth={260}>
-                    <div className="p-1 min-w-[220px]">
-                      <div className="flex items-start justify-between gap-2 mb-1">
+                  <Popup maxWidth={270}>
+                    <div className="p-1 min-w-[230px]">
+                      <div className="flex items-start justify-between gap-2 mb-1.5">
                         <h3 className="font-bold text-sm text-slate-900 leading-snug">{issue.title}</h3>
                         <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded shrink-0 ${
                           issue.status === "open" ? "bg-red-100 text-red-700" :
@@ -246,28 +327,45 @@ export default function IssueMap() {
                         }`}>{issue.status}</span>
                       </div>
                       {issue.description && <p className="text-xs text-slate-500 mb-2 line-clamp-2">{issue.description}</p>}
-                      <div className="text-[11px] text-slate-500 mb-2">{issue.location}{issue.ward ? ` · ${issue.ward}` : ""}</div>
+                      <div className="flex items-center gap-1 text-[11px] text-slate-400 mb-1">
+                        <MapPin className="w-3 h-3" />
+                        <span>{issue.location}{issue.ward ? ` · ${issue.ward}` : ""}</span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 capitalize mb-2">{issue.category}</div>
                       {issue.imageUrl && <img src={issue.imageUrl} alt="" className="w-full h-24 object-cover rounded mb-2" />}
-                      <div className="flex items-center justify-between border-t border-slate-100 pt-2 mt-1">
-                        <div className="flex items-center gap-1 text-xs text-slate-600">
-                          <ThumbsUp className="w-3 h-3 text-primary" />
-                          <span className="font-semibold text-primary">{issue.upvotes}</span>
-                          <span className="text-slate-400">/ {STATUS_THRESHOLD} threshold</span>
+
+                      {/* Upvote progress bar */}
+                      <div className="mb-2">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[10px] text-slate-500 font-medium">Community Support</span>
+                          <span className="text-[10px] font-bold text-primary">{issue.upvotes}/{STATUS_THRESHOLD}</span>
                         </div>
+                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${issue.upvotes >= STATUS_THRESHOLD ? "bg-emerald-500" : "bg-primary"}`}
+                            style={{ width: `${Math.min(100, (issue.upvotes / STATUS_THRESHOLD) * 100)}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between border-t border-slate-100 pt-2 mt-1">
                         {(issue as any).complaintEmailSent && (
-                          <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-semibold"><Mail className="w-3 h-3" />Sent</span>
+                          <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-semibold"><Mail className="w-3 h-3" />Complaint sent</span>
+                        )}
+                        {!(issue as any).complaintEmailSent && (
+                          <span className="flex items-center gap-1 text-[10px] text-slate-400"><TrendingUp className="w-3 h-3" />Needs {Math.max(0, STATUS_THRESHOLD - issue.upvotes)} more vote{Math.max(0, STATUS_THRESHOLD - issue.upvotes) !== 1 ? "s" : ""}</span>
                         )}
                       </div>
                       <button
                         onClick={() => handleUpvote(issue.id, issue.upvotes)}
                         disabled={votedIds.has(issue.id)}
-                        className={`mt-2 w-full text-xs font-semibold py-1.5 rounded transition-colors ${
+                        className={`mt-2 w-full text-xs font-semibold py-1.5 rounded-lg transition-all ${
                           votedIds.has(issue.id)
                             ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                            : "bg-primary/10 text-primary hover:bg-primary hover:text-white"
+                            : "bg-primary/10 text-primary hover:bg-primary hover:text-white active:scale-95"
                         }`}
                       >
-                        {votedIds.has(issue.id) ? "Voted" : "Upvote this issue"}
+                        {votedIds.has(issue.id) ? "✓ Voted" : "👍 Upvote this issue"}
                       </button>
                     </div>
                   </Popup>
@@ -278,11 +376,42 @@ export default function IssueMap() {
 
           {/* Heatmap legend */}
           {showHeatmap && (
-            <div className="absolute bottom-4 left-4 bg-white dark:bg-slate-900 border border-border rounded-xl shadow-lg p-3 z-[1000] text-xs space-y-1.5">
-              <p className="font-bold text-slate-700 dark:text-slate-300 mb-2">Heatmap Legend</p>
-              <div className="flex items-center gap-2"><span className="w-4 h-4 rounded-full bg-red-400 opacity-80" />Urgent (≥{STATUS_THRESHOLD} upvotes)</div>
-              <div className="flex items-center gap-2"><span className="w-4 h-4 rounded-full bg-amber-400 opacity-80" />Reported</div>
-              <div className="flex items-center gap-2"><span className="w-4 h-4 rounded-full bg-emerald-400 opacity-80" />Resolved</div>
+            <div className="absolute bottom-4 left-4 bg-white dark:bg-slate-900 border border-border rounded-xl shadow-xl p-4 z-[1000] text-xs space-y-2 min-w-[180px]">
+              <p className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 mb-3">
+                <Layers className="w-3.5 h-3.5 text-orange-500" /> Heatmap Legend
+              </p>
+              <div className="flex items-center gap-2.5">
+                <div className="w-4 h-4 rounded-full bg-purple-600 opacity-90 shrink-0" />
+                <span className="text-slate-600 dark:text-slate-300">Critical (≥{STATUS_THRESHOLD * 3} votes)</span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <div className="w-4 h-4 rounded-full bg-red-600 opacity-90 shrink-0" />
+                <span className="text-slate-600 dark:text-slate-300">Urgent (≥{STATUS_THRESHOLD * 2} votes)</span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <div className="w-4 h-4 rounded-full bg-red-400 opacity-90 shrink-0" />
+                <span className="text-slate-600 dark:text-slate-300">Active (≥{STATUS_THRESHOLD} votes)</span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <div className="w-4 h-4 rounded-full bg-amber-400 opacity-90 shrink-0" />
+                <span className="text-slate-600 dark:text-slate-300">Reported</span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <div className="w-4 h-4 rounded-full bg-emerald-500 opacity-90 shrink-0" />
+                <span className="text-slate-600 dark:text-slate-300">Resolved</span>
+              </div>
+              <div className="border-t border-border pt-2 mt-1 text-[10px] text-slate-400">
+                Larger circle = more upvotes
+              </div>
+              {heatLoading && <div className="text-[10px] text-slate-400 animate-pulse">Loading heatmap data…</div>}
+              {!heatLoading && <div className="text-[10px] text-slate-400">{heatData.length} issue{heatData.length !== 1 ? "s" : ""} plotted</div>}
+            </div>
+          )}
+
+          {/* Heatmap top bar */}
+          {showHeatmap && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-orange-500 text-white text-[11px] font-bold px-3 py-1.5 rounded-full shadow-lg z-[1000] flex items-center gap-1.5">
+              <Flame className="w-3 h-3" /> Heatmap Active — circle size reflects issue severity
             </div>
           )}
         </div>
@@ -303,7 +432,7 @@ export default function IssueMap() {
             ) : (
               <div className="flex gap-3 p-3 h-full">
                 {issues?.map(issue => (
-                  <div key={issue.id} className="shrink-0 w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 flex flex-col justify-between hover:border-primary/50 transition-colors shadow-sm">
+                  <div key={issue.id} className="shrink-0 w-60 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 flex flex-col justify-between hover:border-primary/50 hover:shadow-md transition-all shadow-sm">
                     <div>
                       <div className="flex items-center gap-1.5 mb-1">
                         {getStatusIcon(issue.status)}
@@ -311,22 +440,32 @@ export default function IssueMap() {
                       </div>
                       <p className="text-[11px] text-slate-400 truncate">{issue.location}</p>
                       {issue.ward && <p className="text-[11px] text-primary font-medium">{issue.ward}</p>}
+                      {issue.description && <p className="text-[11px] text-slate-500 line-clamp-2 mt-1">{issue.description}</p>}
                     </div>
-                    <div className="flex items-center justify-between mt-2">
-                      <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-full border ${getStatusBadge(issue.status)}`}>{issue.status}</span>
-                      <div className="flex items-center gap-1">
-                        {(issue as any).complaintEmailSent && <Mail className="w-3 h-3 text-emerald-500" />}
-                        <button
-                          onClick={() => handleUpvote(issue.id, issue.upvotes)}
-                          disabled={votedIds.has(issue.id)}
-                          className={`flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-full transition-colors ${
-                            votedIds.has(issue.id)
-                              ? "text-slate-400"
-                              : "text-primary hover:bg-primary/10"
-                          }`}
-                        >
-                          <ThumbsUp className="w-3 h-3" />{issue.upvotes}
-                        </button>
+                    <div>
+                      {/* Mini progress bar */}
+                      <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden my-1.5">
+                        <div
+                          className={`h-full rounded-full ${issue.upvotes >= STATUS_THRESHOLD ? "bg-emerald-500" : "bg-primary"}`}
+                          style={{ width: `${Math.min(100, (issue.upvotes / STATUS_THRESHOLD) * 100)}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-full border ${getStatusBadge(issue.status)}`}>{issue.status}</span>
+                        <div className="flex items-center gap-1.5">
+                          {(issue as any).complaintEmailSent && <Mail className="w-3 h-3 text-emerald-500" title="Complaint sent" />}
+                          <button
+                            onClick={() => handleUpvote(issue.id, issue.upvotes)}
+                            disabled={votedIds.has(issue.id)}
+                            className={`flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-full transition-colors ${
+                              votedIds.has(issue.id)
+                                ? "text-slate-400"
+                                : "text-primary hover:bg-primary/10"
+                            }`}
+                          >
+                            <ThumbsUp className="w-3 h-3" />{issue.upvotes}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -339,3 +478,5 @@ export default function IssueMap() {
     </Layout>
   );
 }
+
+
