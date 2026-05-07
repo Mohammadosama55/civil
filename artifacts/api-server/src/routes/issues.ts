@@ -54,6 +54,16 @@ router.get("/issues", async (req: Request, res: Response): Promise<void> => {
   res.json(issues.map(formatIssue));
 });
 
+router.get("/issues/alerts", async (_req: Request, res: Response): Promise<void> => {
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const [escalatedThisWeek, urgentOpen, totalOpen] = await Promise.all([
+    Issue.countDocuments({ complaintEmailSent: true, createdAt: { $gte: weekAgo } }),
+    Issue.countDocuments({ upvotes: { $gte: UPVOTE_THRESHOLD }, status: { $ne: "resolved" } }),
+    Issue.countDocuments({ status: "open" }),
+  ]);
+  res.json({ escalatedThisWeek, urgentOpen, totalOpen, threshold: UPVOTE_THRESHOLD });
+});
+
 router.get("/issues/stats", async (_req: Request, res: Response): Promise<void> => {
   const [total, open, inProgress, resolved] = await Promise.all([
     Issue.countDocuments(),
